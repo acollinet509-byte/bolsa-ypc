@@ -1,5 +1,19 @@
 import streamlit as st
 import pandas as pd
+from streamlit_gsheets import GSheetsConnection
+
+# Esto conecta la app con el link que acabas de pegar en Secrets
+conn = st.connection("gsheets", type=GSheetsConnection)
+
+def traer_datos():
+    try:
+        # Esto lee tu Excel en tiempo real
+        return conn.read(ttl=0)
+    except:
+        # Si el Excel está vacío, crea las columnas
+        return pd.DataFrame(columns=["Nombre", "Precio", "Stock", "Dueño", "Discord", "Email"])
+import streamlit as st
+import pandas as pd
 
 # --- CONFIGURACIÓN ---
 st.set_page_config(page_title="ATLAS SMP STOCK EXCHANGE", layout="wide", page_icon="🏛️")
