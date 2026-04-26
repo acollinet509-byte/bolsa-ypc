@@ -14,17 +14,17 @@ if 'carteras' not in st.session_state:
 if 'discord_link' not in st.session_state:
     st.session_state.discord_link = "https://discord.gg/atlas-smp"
 
-# --- SIDEBAR E IDIOMA ---
+# --- SIDEBAR ---
 st.sidebar.title("ATLAS SMP")
 idioma = st.sidebar.selectbox("Idioma / Language", ["Español", "English"])
 
-# --- LÓGICA DE LOGIN ---
 if "user_email" not in st.session_state:
     st.session_state.user_email = None
 
+# SISTEMA DE LOGIN
 if not st.session_state.user_email:
     if st.sidebar.button("Log in with Google"):
-        # Al confirmar con tu mail real, se activa el modo Admin
+        # Al loguearte, el sistema reconoce si sos acollinet509@gmail.com
         st.session_state.user_email = "acollinet509@gmail.com" 
         st.rerun()
 else:
@@ -33,76 +33,114 @@ else:
         st.session_state.user_email = None
         st.rerun()
 
-    # --- INTERFAZ PRINCIPAL ---
+    # --- TÍTULO Y DISCORD ---
     st.title("🏛️ BOLSA DE VALORES ATLAS SMP" if idioma == "Español" else "🏛️ ATLAS SMP STOCK EXCHANGE")
-    
-    # Botón dinámico de Discord
     st.link_button("Discord Server", st.session_state.discord_link)
 
-    tabs = ["📈 Mercado", "🛒 Comprar", "📝 Registrar", "🏢 Mi Empresa", "💼 Cartera", "👑 Admin"]
+    tabs = ["📈 Mercado", "🛒 Comprar", "📝 Registrar", "🏢 Gestión Empresa", "💼 Mi Cartera", "👑 Admin"]
     t1, t2, t3, t4, t5, t6 = st.tabs(tabs)
     
+    # 1. TABLA DE EMPRESAS
     with t1:
         if not st.session_state.empresas:
-            st.info("No hay empresas registradas.")
+            st.info("No hay empresas en el mercado.")
         else:
-            df = pd.DataFrame([{"Empresa": k, "Precio": v['precio'], "Stock": v['stock'], "Contacto": v['discord']} 
+            df = pd.DataFrame([{"Empresa": k, "Precio (💎)": v['precio'], "Stock": v['stock'], "Dueño": v['discord']} 
                                for k, v in st.session_state.empresas.items()])
             st.table(df)
 
+    # 2. COMPRAR ACCIONES (PEDIDO A LA EMPRESA)
     with t2:
         if st.session_state.empresas:
-            e_sel = st.selectbox("Empresa", list(st.session_state.empresas.keys()))
-            c_sel = st.number_input("Cantidad", min_value=1)
-            if st.button("Enviar Pedido"):
-                dueño = st.session_state.empresas[e_sel]['dueño']
+            e_sel = st.selectbox("Elegí empresa para comprar", list(st.session_state.empresas.keys()))
+            cant_c = st.number_input("Cantidad a comprar", min_value=1)
+            if st.button("Enviar Pedido de Compra"):
+                dueño_e = st.session_state.empresas[e_sel]['dueño']
                 st.session_state.pedidos_pendientes.append({
-                    "comprador": st.session_state.user_email, "empresa": e_sel, "cantidad": c_sel, "dueño_email": dueño
+                    "tipo": "COMPRA", "usuario": st.session_state.user_email, 
+                    "empresa": e_sel, "cantidad": cant_c, "dueño_email": dueño_e
                 })
-                st.success("Pedido enviado.")
+                st.success(f"Pedido enviado a {e_sel}. Esperá a que el dueño confirme.")
+        else:
+            st.write("No hay empresas registradas.")
 
+    # 3. REGISTRAR EMPRESA
     with t3:
-        with st.form("reg"):
-            n = st.text_input("Nombre Empresa")
-            p = st.number_input("Precio", min_value=1)
-            s = st.number_input("Stock total", min_value=1)
+        with st.form("registro_e"):
+            n = st.text_input("Nombre de la Empresa")
+            p = st.number_input("Valor de cada acción", min_value=1)
+            s = st.number_input("Acciones totales a la venta", min_value=1)
             d = st.text_input("Tu Discord")
-            if st.form_submit_button("Lanzar"):
+            if st.form_submit_button("Lanzar a la Bolsa"):
                 st.session_state.empresas[n] = {'precio': p, 'stock': s, 'dueño': st.session_state.user_email, 'discord': d}
+                st.success("¡Empresa lanzada!")
                 st.rerun()
 
+    # 4. GESTIÓN DE LA EMPRESA (NOTIFICACIONES DE COMPRA Y VENTA)
     with t4:
-        mis_p = [p for p in st.session_state.pedidos_pendientes if p['dueño_email'] == st.session_state.user_email]
-        if not mis_p: st.write("Sin ventas pendientes.")
+        st.subheader("🔔 Pedidos de Clientes (Compras y Devoluciones)")
+        mis_pedidos = [p for p in st.session_state.pedidos_pendientes if p['dueño_email'] == st.session_state.user_email]
+        
+        if not mis_pedidos:
+            st.write("No tenés movimientos pendientes.")
         else:
-            for i, p in enumerate(mis_p):
-                st.write(f"**{p['comprador']}** quiere **{p['cantidad']}** de **{p['empresa']}**")
-                if st.button("Confirmar Venta", key=f"v_{i}"):
-                    st.session_state.empresas[p['empresa']]['stock'] -= p['cantidad']
-                    if p['comprador'] not in st.session_state.carteras: st.session_state.carteras[p['comprador']] = {}
-                    st.session_state.carteras[p['comprador']][p['empresa']] = st.session_state.carteras[p['comprador']].get(p['empresa'], 0) + p['cantidad']
-                    st.session_state.pedidos_pendientes.remove(p)
-                    st.rerun()
+            for i, p in enumerate(mis_pedidos):
+                tipo_txt = "QUIERE COMPRAR" if p['tipo'] == "COMPRA" else "QUIERE DEVOLVER/VENDER"
+                st.write(f"📩 **{p['usuario']}** {tipo_txt} **{p['cantidad']}** acciones de **{p['empresa']}**")
+                
+                if st.button("Aceptar Operación", key=f"op_{i}"):
+                    if p['tipo'] == "COMPRA":
+                        if st.session_state.empresas[p['empresa']]['stock'] >= p['cantidad']:
+                            st.session_state.empresas[p['empresa']]['stock'] -= p['cantidad']
+                            if p['usuario'] not in st.session_state.carteras: st.session_state.carteras[p['usuario']] = {}
+                            cartera = st.session_state.carteras[p['usuario']]
+                            cartera[p['empresa']] = cartera.get(p['empresa'], 0) + p['cantidad']
+                            st.session_state.pedidos_pendientes.remove(p)
+                            st.success("Venta confirmada.")
+                            st.rerun()
+                    else:
+                        # Reventa a la empresa (Vuelve al stock)
+                        st.session_state.carteras[p['usuario']][p['empresa']] -= p['cantidad']
+                        st.session_state.empresas[p['empresa']]['stock'] += p['cantidad']
+                        st.session_state.pedidos_pendientes.remove(p)
+                        st.success("Recompra confirmada.")
+                        st.rerun()
 
+    # 5. MI CARTERA (SOLO SE PUEDE VENDER A LA EMPRESA ORIGINAL)
     with t5:
-        c = st.session_state.carteras.get(st.session_state.user_email, {})
-        if not c: st.info("No tenés acciones.")
+        st.subheader("Tus Acciones")
+        mi_c = st.session_state.carteras.get(st.session_state.user_email, {})
+        if not mi_c or all(v == 0 for v in mi_c.values()):
+            st.info("No tenés acciones confirmadas.")
         else:
-            for e, q in c.items(): st.write(f"✔️ {e}: {q} acciones")
+            for emp, cant in mi_c.items():
+                if cant > 0:
+                    col1, col2, col3 = st.columns([2, 1, 1])
+                    col1.write(f"🔸 **{emp}**: {cant} unidades")
+                    cant_v = col2.number_input(f"Cantidad", min_value=1, max_value=cant, key=f"v_{emp}")
+                    if col3.button("Vender a Empresa", key=f"btn_v_{emp}"):
+                        dueño_orig = st.session_state.empresas[emp]['dueño']
+                        st.session_state.pedidos_pendientes.append({
+                            "tipo": "VENTA", "usuario": st.session_state.user_email, 
+                            "empresa": emp, "cantidad": cant_v, "dueño_email": dueño_orig
+                        })
+                        st.warning(f"Solicitud de venta enviada al dueño de {emp}.")
 
-    # --- AQUÍ ESTÁ TU CONTROL EXCLUSIVO ---
+    # 6. ADMIN (SOLO acollinet509@gmail.com)
     with t6:
         if st.session_state.user_email == "acollinet509@gmail.com":
-            st.subheader("Configuración de Dueño")
-            # ESTO SOLO LO VES VOS
-            nuevo_link = st.text_input("Editar Link de Discord Principal", value=st.session_state.discord_link)
-            if st.button("Guardar nuevo Link"):
-                st.session_state.discord_link = nuevo_link
-                st.success("Link actualizado para todo el server.")
+            st.subheader("👑 Panel de Santi")
+            # Cambiar Discord
+            new_discord = st.text_input("Actualizar Link de Discord", value=st.session_state.discord_link)
+            if st.button("Guardar Link"):
+                st.session_state.discord_link = new_discord
+                st.success("Link actualizado.")
             
             st.divider()
-            if st.button("BORRAR TODAS LAS EMPRESAS"):
+            if st.button("RESETEAR BOLSA (BORRAR TODO)"):
                 st.session_state.empresas = {}
+                st.session_state.pedidos_pendientes = []
+                st.session_state.carteras = {}
                 st.rerun()
         else:
-            st.error("No tenés permisos para cambiar el Discord de la App.")
+            st.error("No tenés permisos de Administrador.")
